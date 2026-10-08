@@ -10,6 +10,23 @@
     p { font-size: 1.2rem; }
     .btn-comenzar { display: inline-block; margin-top: 24px; padding: 14px 32px; font-size: 1.1rem; font-family: inherit; color: #ffffff; background: #1e6fd9; border: none; border-radius: 8px; cursor: pointer; }
     .btn-comenzar:hover { background: #1859b0; }
+    .btn-comenzar:disabled { opacity: 0.6; cursor: wait; }
+
+    .card { max-width: 480px; margin: 40px auto 0; padding: 24px; background: #ffffff; border-radius: 12px; box-shadow: 0 2px 8px rgba(5, 28, 44, 0.08); text-align: left; }
+    .card label { display: block; margin-bottom: 16px; }
+    .card input[type="text"], .card textarea { display: block; width: 100%; margin-top: 6px; padding: 10px; font: inherit; border: 1px solid #c3cfdb; border-radius: 6px; box-sizing: border-box; }
+    fieldset { border: none; padding: 0; margin: 0 0 16px; }
+    legend { font-weight: bold; margin-bottom: 6px; padding: 0; }
+    .escala { display: flex; gap: 8px; }
+    .escala label { position: relative; flex: 1; margin: 0; padding: 10px 0; text-align: center; border: 1px solid #c3cfdb; border-radius: 6px; cursor: pointer; }
+    .escala input { position: absolute; opacity: 0; }
+    .escala label:has(input:checked) { background: #1e6fd9; border-color: #1e6fd9; color: #ffffff; }
+    .mensaje { min-height: 1.2em; font-size: 1rem; text-align: center; }
+
+    #lista { list-style: none; padding: 0; max-width: 480px; margin: 24px auto 0; text-align: left; }
+    #lista li { background: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(5, 28, 44, 0.08); }
+    #lista li p { font-size: 1rem; margin: 8px 0; }
+    #lista .meta { color: #5a6b7d; font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -17,5 +34,119 @@
   <p>Hackathon de Salud Mental con IA · UCV</p>
   <p>Pídele a Claude que cambie esta página.</p>
   <button class="btn-comenzar">Comenzar</button>
+
+  <section class="card">
+    <form id="form-registro">
+      <label>Nombre ficticio
+        <input type="text" id="nombre" maxlength="80" autocomplete="off">
+      </label>
+      <fieldset>
+        <legend>Estado de ánimo (1 = bajo, 5 = muy bien)</legend>
+        <div class="escala">
+          <label><input type="radio" name="estado_animo" value="1">1</label>
+          <label><input type="radio" name="estado_animo" value="2">2</label>
+          <label><input type="radio" name="estado_animo" value="3">3</label>
+          <label><input type="radio" name="estado_animo" value="4">4</label>
+          <label><input type="radio" name="estado_animo" value="5">5</label>
+        </div>
+      </fieldset>
+      <label>Nota
+        <textarea id="nota" rows="3" maxlength="500"></textarea>
+      </label>
+      <button type="submit" class="btn-comenzar" id="btn-guardar">Guardar</button>
+      <p class="mensaje" id="mensaje" role="status"></p>
+    </form>
+  </section>
+
+  <section>
+    <h2>Registros</h2>
+    <ul id="lista"></ul>
+  </section>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = 'https://uujjrlqfljbnpqiuhmkp.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_m4nhLfs0lQiGpo4Nt2fu7w_ammnn2N9';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const form = document.getElementById('form-registro');
+    const nombreInput = document.getElementById('nombre');
+    const notaInput = document.getElementById('nota');
+    const botonGuardar = document.getElementById('btn-guardar');
+    const mensaje = document.getElementById('mensaje');
+    const lista = document.getElementById('lista');
+
+    async function cargarRegistros() {
+      const { data, error } = await supabase
+        .from('registros')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      lista.replaceChildren();
+
+      if (error) {
+        mensaje.textContent = 'No se pudo cargar la lista: ' + error.message;
+        return;
+      }
+
+      if (data.length === 0) {
+        const vacio = document.createElement('li');
+        vacio.textContent = 'Aún no hay registros.';
+        lista.append(vacio);
+        return;
+      }
+
+      for (const registro of data) {
+        const li = document.createElement('li');
+
+        const titulo = document.createElement('strong');
+        titulo.textContent = `${registro.nombre} · ánimo ${registro.estado_animo}/5`;
+
+        const nota = document.createElement('p');
+        nota.textContent = registro.nota;
+
+        const fecha = document.createElement('div');
+        fecha.className = 'meta';
+        fecha.textContent = new Date(registro.created_at).toLocaleString('es');
+
+        li.append(titulo, nota, fecha);
+        lista.append(li);
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nombre = nombreInput.value.trim();
+      const nota = notaInput.value.trim();
+      const seleccionado = form.querySelector('input[name="estado_animo"]:checked');
+
+      if (!nombre || !seleccionado || !nota) {
+        mensaje.textContent = 'Completa el nombre, el estado de ánimo y la nota.';
+        return;
+      }
+
+      botonGuardar.disabled = true;
+      mensaje.textContent = 'Guardando…';
+
+      const { error } = await supabase
+        .from('registros')
+        .insert({ nombre, estado_animo: Number(seleccionado.value), nota });
+
+      botonGuardar.disabled = false;
+
+      if (error) {
+        mensaje.textContent = 'No se pudo guardar: ' + error.message;
+        return;
+      }
+
+      form.reset();
+      mensaje.textContent = 'Registro guardado.';
+      await cargarRegistros();
+    });
+
+    cargarRegistros();
+  </script>
 </body>
 </html>
